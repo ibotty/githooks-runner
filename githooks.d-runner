@@ -10,10 +10,18 @@ set_defaults() {
     GIT_WORK_TREE="${GIT_WORK_TREE-$PWD}"
     GITHOOKS_DIR="${GITHOOKS_DIR-}"
 
-    GITHOOKS_USE_GLOBAL_HOOKS="${GITHOOKS_USE_GLOBAL_HOOKS-no}"
+    GITHOOKS_USE_ABSOLUTE_HOOKSDIR="${GITHOOKS_USE_ABSOLUTE_HOOKSDIR-no}"
 
     export SIMPLE_BACKUP_SUFFIX="${GITHOOKS_BACKUP_SUFFIX-.backup}"
     export VERSION_CONTROL="${GITHOOKS_BACKUP_VERSION_CONTROL-numbered}"
+
+    XDG_CONFIG_HOME="${XDG_CONFIG_HOME-$HOME/.config}"
+    githooks_dirs=("$XDG_CONFIG_HOME/git/hooks" "$HOME/.githooks")
+    if is_truish "$GITHOOKS_USE_ABSOLUTE_HOOKSDIR"; then
+        githooks_dirs+=("$GITHOOKS_DIR")
+    else
+        githooks_dirs+=("$GIT_WORK_TREE/${GITHOOKS_DIR-.githooks}")
+    fi
 }
 
 usage() {
@@ -68,7 +76,7 @@ install_hook() {
         local tmpfile; tmpfile="$(mktemp)"
         cat <<EOF > "$tmpfile"
 #!/bin/sh
-GITHOOKS_DIR="$GITHOOKS_DIR" GITHOOKS_USE_GLOBAL_HOOKS="$GITHOOKS_USE_GLOBAL_HOOKS" \
+GITHOOKS_DIR="$GITHOOKS_DIR" GITHOOKS_USE_ABSOLUTE_HOOKSDIR="$GITHOOKS_USE_ABSOLUTE_HOOKSDIR" \
     exec "$(scriptpath)" run "$hook" "\$@"
 EOF
         chmod +x "$tmpfile"
@@ -84,32 +92,27 @@ install_all_hooks() {
     done
 }
 
-githooks_dir() {
-    if is_truish "$GITHOOKS_USE_GLOBAL_HOOKS"; then
-        echo "$GITHOOKS_DIR"
-    else
-        echo "$GIT_WORK_TREE/${GITHOOKS_DIR-.githooks}"
-    fi
-}
-
 run_hook() {
     # This relies on set -e (above) to fail when a hook fails.
     local hook="$1"
     shift
 
-    for file in "$(githooks_dir)/$hook"/* ; do
-        if [ -x "$file" ]; then
-            err "---> Running hook $file"
-            err
-            $file "$@"
-        fi
+    for dir in "${githooks_dirs[@]}"; do
+        for file in "$dir/${hook}"{.d/*,}; do
+            err "---> candidate hook $file"
+            if [ -x "$file" ] && ! [ -d "$file" ]; then
+                err "---> Running hook $file"
+                err
+                $file "$@"
+            fi
+        done
     done
 }
 
 set_defaults
 
 if is_hook "$0"; then
-    hook="$0"
+    hook="$(basename "$0")"
     run_hook "$hook" "$@"
 elif [ "$#" -eq 0 ]; then
     usage
