@@ -99,7 +99,6 @@ run_hook() {
 
     for dir in "${githooks_dirs[@]}"; do
         for file in "$dir/${hook}"{.d/*,}; do
-            err "---> candidate hook $file"
             if [ -x "$file" ] && ! [ -d "$file" ]; then
                 err "---> Running hook $file"
                 err
